@@ -121,9 +121,15 @@ export class GameScene extends Phaser.Scene {
     // Setup touch controls
     this.inputManager.setupTouchControls(this.cameras.main);
 
+    // Update ability buttons based on growth stage
+    this.inputManager.updateAbilityButtons(this.gameState.growthStage);
+
     // Create UI
     this.hud = new HUD(this, this.gameState);
     this.dialogBox = new DialogBox(this);
+
+    // Create home decorations
+    this.createHomeDecorations();
 
     // Tutorial
     if (this.isTutorial) {
@@ -370,6 +376,7 @@ export class GameScene extends Phaser.Scene {
       this.gameState.growthStage++;
       this.player.setGrowthStage(this.gameState.growthStage);
       this.hud.updateGrowthStage(this.gameState.growthStage);
+      this.inputManager.updateAbilityButtons(this.gameState.growthStage);
       this.audioManager.playSuccess();
     }
     
@@ -500,5 +507,70 @@ export class GameScene extends Phaser.Scene {
 
   isDaytime(): boolean {
     return this.dayNightSystem.isDaytime();
+  }
+
+  private createHomeDecorations(): void {
+    const homeData = HomeTypes[this.gameState.playerHome!];
+    const decorations = this.gameState.homeDecorations;
+
+    // Display decorations around the home entrance
+    decorations.forEach((_treasureId, index) => {
+      const angle = (index / decorations.length) * Math.PI * 2;
+      const radius = 50;
+      const x = homeData.x + Math.cos(angle) * radius;
+      const y = homeData.y + Math.sin(angle) * radius;
+
+      // Create a sparkly decoration visual
+      const decoration = this.add.graphics();
+      decoration.fillStyle(0xffd700, 1);
+      
+      // Draw a star shape
+      const points: { x: number; y: number }[] = [];
+      for (let i = 0; i < 10; i++) {
+        const r = i % 2 === 0 ? 8 : 4;
+        const a = (i * Math.PI * 2) / 10 - Math.PI / 2;
+        points.push({
+          x: x + Math.cos(a) * r,
+          y: y + Math.sin(a) * r
+        });
+      }
+      
+      decoration.beginPath();
+      decoration.moveTo(points[0].x, points[0].y);
+      for (let i = 1; i < points.length; i++) {
+        decoration.lineTo(points[i].x, points[i].y);
+      }
+      decoration.closePath();
+      decoration.fillPath();
+
+      // Add a glow effect
+      decoration.lineStyle(2, 0xffeb3b, 0.6);
+      decoration.strokePath();
+
+      decoration.setDepth(11);
+
+      // Gentle sparkle animation
+      this.tweens.add({
+        targets: decoration,
+        alpha: 0.6,
+        scaleX: 1.2,
+        scaleY: 1.2,
+        duration: 1000 + Math.random() * 500,
+        yoyo: true,
+        repeat: -1,
+        ease: 'Sine.easeInOut'
+      });
+    });
+
+    // Add a label if decorations exist
+    if (decorations.length > 0) {
+      const label = this.add.text(homeData.x, homeData.y + 70, `✨ ${decorations.length} treasure${decorations.length > 1 ? 's' : ''}`, {
+        fontSize: '14px',
+        color: '#ffd700',
+        backgroundColor: '#00000088',
+        padding: { x: 6, y: 3 }
+      }).setOrigin(0.5);
+      label.setDepth(11);
+    }
   }
 }
