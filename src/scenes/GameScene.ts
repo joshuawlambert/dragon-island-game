@@ -3,6 +3,7 @@ import { GameConfig, HomeTypes, GrowthStages } from '../config';
 import { SaveManager } from '../utils/SaveManager';
 import { InputManager } from '../utils/InputManager';
 import { AudioManager } from '../utils/AudioManager';
+import { MusicManager } from '../utils/MusicManager';
 import { GameState } from '../types';
 import { Player } from '../entities/Player';
 import { Human } from '../entities/Human';
@@ -11,6 +12,8 @@ import { WorldGenerator } from '../systems/WorldGenerator';
 import { StealthSystem } from '../systems/StealthSystem';
 import { DayNightSystem } from '../systems/DayNightSystem';
 import { CollectibleManager } from '../systems/CollectibleManager';
+import { QuestSystem } from '../systems/QuestSystem';
+import { HidingSpotManager } from '../systems/HidingSpotManager';
 import { HUD } from '../ui/HUD';
 import { DialogBox } from '../ui/DialogBox';
 
@@ -18,10 +21,13 @@ export class GameScene extends Phaser.Scene {
   private saveManager: SaveManager;
   private inputManager!: InputManager;
   private audioManager!: AudioManager;
+  private musicManager!: MusicManager;
   private worldGenerator!: WorldGenerator;
   private stealthSystem!: StealthSystem;
   private dayNightSystem!: DayNightSystem;
   private collectibleManager!: CollectibleManager;
+  private questSystem!: QuestSystem;
+  private hidingSpotManager!: HidingSpotManager;
   private hud!: HUD;
   private dialogBox!: DialogBox;
 
@@ -35,6 +41,13 @@ export class GameScene extends Phaser.Scene {
   private isAtHome = false;
   private homeZone!: Phaser.GameObjects.Zone;
   private sleeping = false;
+  private nearQuestGiver: string | null = null;
+  
+  // Quest tracking
+  public fishCaught = 0;
+  public campSnacksEaten = 0;
+  public successfulHides = 0;
+  public hasBeenOutAtNight = false;
 
   constructor() {
     super({ key: 'GameScene' });
@@ -56,11 +69,18 @@ export class GameScene extends Phaser.Scene {
   create(): void {
     // Initialize managers
     this.audioManager = new AudioManager(this);
+    this.musicManager = new MusicManager();
     this.inputManager = new InputManager(this);
+    
+    // Start background music
+    this.musicManager.startBackgroundMusic();
     
     // Create world
     this.worldGenerator = new WorldGenerator(this);
     this.worldGenerator.generateWorld();
+
+    // Create hiding spots
+    this.hidingSpotManager = new HidingSpotManager(this);
 
     // Setup camera
     this.cameras.main.setBounds(0, 0, GameConfig.worldWidth, GameConfig.worldHeight);
@@ -73,6 +93,7 @@ export class GameScene extends Phaser.Scene {
       this.gameState.currentY,
       this.audioManager
     );
+    this.player.setGrowthStage(this.gameState.growthStage);
     this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
 
     // Create home zone
@@ -87,6 +108,15 @@ export class GameScene extends Phaser.Scene {
     this.stealthSystem = new StealthSystem(this, this.player, [...this.humans, this.hunter]);
     this.dayNightSystem = new DayNightSystem(this, this.gameState.currentDay);
     this.collectibleManager = new CollectibleManager(this, this.player, this.audioManager);
+    this.questSystem = new QuestSystem(this, this.audioManager);
+
+    // Initialize active quest if none set
+    if (!this.gameState.activeQuest) {
+      const firstQuest = this.questSystem.getAvailableQuest(this.gameState);
+      if (firstQuest) {
+        this.gameState.activeQuest = firstQuest.id;
+      }
+    }
 
     // Setup touch controls
     this.inputManager.setupTouchControls(this.cameras.main);
@@ -169,6 +199,22 @@ export class GameScene extends Phaser.Scene {
     // Update player
     this.player.update(input, delta);
 
+    // Check hiding spots
+    const hidingSpot = this.hidingSpotManager.checkPlayerInHidingSpot(this.player);
+    if (hidingSpot && input.hide) {
+      this.player.setHidingInSpot(true);
+      // Track successful hides when NPCs are nearby
+      const nearbyNPC = [...this.humans, this.hunter].some(npc => {
+        const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, npc.x, npc.y);
+        return dist < 150 && npc.getAlertState() !== 'idle';
+      });
+      if (nearbyNPC) {
+        this.successfulHides++;
+      }
+    } else if (!hidingSpot) {
+      this.player.setHidingInSpot(false);
+    }
+
     // Update NPCs
     this.humans.forEach(human => human.update(delta));
     this.hunter.update(delta, this.player);
@@ -176,16 +222,104 @@ export class GameScene extends Phaser.Scene {
     // Update systems
     this.stealthSystem.update();
     this.dayNightSystem.update(delta);
-    this.collectibleManager.update();
+    this.collectibleManager.update(delta);
+
+    // Check for night time
+    if (!this.hasBeenOutAtNight && !this.dayNightSystem.isDaytime()) {
+      this.hasBeenOutAtNight = true;
+    }
+
+    // Update quest system
+    this.questSystem.showQuestIndicators(this.gameState);
+    const activeQuest = this.questSystem.getAvailableQuest(this.gameState);
+    if (activeQuest) {
+      this.hud.updateQuest(activeQuest.title);
+    } else {
+      this.hud.updateQuest('');
+    }
+    
+    // Check quest giver proximity
+    const nearGiver = this.questSystem.checkNearQuestGiver(this.player.x, this.player.y);
+    this.nearQuestGiver = nearGiver ? nearGiver.giver : null;
+
+    // Quest giver interaction
+    if (this.nearQuestGiver && input.interact) {
+      this.showQuestDialog();
+    }
 
     // Check home interaction
-    if (this.isAtHome && input.interact) {
+    if (this.isAtHome && input.interact && !this.nearQuestGiver) {
       this.showHomeDialog();
     }
+
+    // Update HUD with time
+    this.hud.updateTime(this.dayNightSystem.getTimeString());
 
     // Tutorial updates
     if (this.isTutorial) {
       this.updateTutorial(input);
+    }
+  }
+
+  createSmokePuff(x: number, y: number): void {
+    const smoke = this.add.graphics();
+    smoke.fillStyle(0xcccccc, 0.6);
+    smoke.fillCircle(0, 0, 30);
+    smoke.fillStyle(0xffffff, 0.4);
+    smoke.fillCircle(-10, -10, 20);
+    smoke.fillCircle(10, 10, 20);
+    smoke.setPosition(x, y);
+    smoke.setDepth(100);
+
+    // Fade and expand
+    this.tweens.add({
+      targets: smoke,
+      alpha: 0,
+      scaleX: 2,
+      scaleY: 2,
+      duration: GameConfig.player.smokeDuration,
+      onComplete: () => smoke.destroy()
+    });
+
+    // NPCs will be distracted by this position
+    this.humans.forEach(human => {
+      const dist = Phaser.Math.Distance.Between(human.x, human.y, x, y);
+      if (dist < 200) {
+        human.setAlertState('suspicious');
+      }
+    });
+  }
+
+  private showQuestDialog(): void {
+    const activeQuest = this.questSystem.getAvailableQuest(this.gameState);
+    if (!activeQuest) {
+      this.dialogBox.show(`${this.nearQuestGiver}: You've completed all my quests! Great job!`, () => {});
+      return;
+    }
+
+    const isComplete = activeQuest.checkComplete(this.gameState, this);
+
+    if (isComplete && !this.gameState.completedQuests.includes(activeQuest.id)) {
+      // Complete the quest
+      this.questSystem.completeQuest(activeQuest.id, this.gameState);
+      this.dialogBox.show(
+        `${activeQuest.giver}: ${activeQuest.reward}`,
+        () => {
+          const nextQuest = this.questSystem.getAvailableQuest(this.gameState);
+          if (nextQuest) {
+            this.dialogBox.show(
+              `${nextQuest.giver}: ${nextQuest.title}\n\n${nextQuest.description}`,
+              () => {}
+            );
+          }
+        }
+      );
+    } else if (activeQuest.giver === this.nearQuestGiver) {
+      // Show current quest
+      this.dialogBox.show(
+        `${activeQuest.giver}: ${activeQuest.title}\n\n${activeQuest.description}`,
+        () => {}
+      );
     }
   }
 
@@ -235,10 +369,16 @@ export class GameScene extends Phaser.Scene {
       message += `✨ You've grown into a ${nextStage.name}!\n`;
       this.gameState.growthStage++;
       this.player.setGrowthStage(this.gameState.growthStage);
+      this.hud.updateGrowthStage(this.gameState.growthStage);
       this.audioManager.playSuccess();
     }
     
-    message += `\nPress Continue to sleep and start a new day.`;
+    // Show decoration option if treasures available
+    if (this.gameState.treasures.length > this.gameState.homeDecorations.length) {
+      message += `\n✨ You have ${this.gameState.treasures.length - this.gameState.homeDecorations.length} treasures to place in your home!`;
+    }
+    
+    message += `\n\nPress Continue to sleep and start a new day.`;
 
     this.dialogBox.showWithButton(
       message,

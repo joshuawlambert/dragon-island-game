@@ -1,11 +1,14 @@
 import Phaser from 'phaser';
-import { GameConfig } from '../config';
+import { GameConfig, GrowthStages } from '../config';
 import { InputState } from '../types';
 import { AudioManager } from '../utils/AudioManager';
 
 export class Player extends Phaser.Physics.Arcade.Sprite {
   private audioManager: AudioManager;
   private hiding = false;
+  private hidingInSpot = false; // Hiding in bush/grass
+  private gliding = false;
+  private flying = false;
   private growthStage = 0;
   private stepSoundTimer = 0;
 
@@ -79,6 +82,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       // Unhide if trying to move
       if (input.up || input.down || input.left || input.right) {
         this.hiding = false;
+        this.hidingInSpot = false;
         this.audioManager.playUnhide();
         this.drawPlayer();
       }
@@ -98,18 +102,41 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
         velocityY *= 0.707;
       }
 
-      const speed = GameConfig.player.speed;
+      // Speed based on movement mode
+      let speed = GameConfig.player.speed;
+      
+      // Check for glide/fly based on growth stage
+      const stage = GrowthStages[this.growthStage];
+      
+      if (input.glide && stage.canGlide && !this.flying) {
+        this.gliding = true;
+        speed = GameConfig.player.glideSpeed;
+      } else if (input.glide && stage.canFly) {
+        this.flying = true;
+        this.gliding = false;
+        speed = GameConfig.player.flySpeed;
+      } else {
+        this.gliding = false;
+        this.flying = false;
+      }
+      
       this.setVelocity(velocityX * speed, velocityY * speed);
 
       // Hide action
       if (input.hide && !this.hiding) {
         this.hiding = true;
+        this.hidingInSpot = false; // Rock form, not hiding in spot
         this.audioManager.playHide();
         this.drawPlayer();
       }
 
-      // Step sounds
-      if ((velocityX !== 0 || velocityY !== 0) && !this.hiding) {
+      // Smoke ability
+      if (input.smoke && stage.canSmoke) {
+        this.useSmoke();
+      }
+
+      // Step sounds (not while gliding/flying)
+      if ((velocityX !== 0 || velocityY !== 0) && !this.hiding && !this.gliding && !this.flying) {
         this.stepSoundTimer += delta;
         if (this.stepSoundTimer > 400) {
           this.audioManager.playStep();
@@ -119,8 +146,38 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     }
   }
 
+  private useSmoke(): void {
+    // Create smoke puff in front of player
+    const angle = Math.random() * Math.PI * 2;
+    const distance = GameConfig.player.smokeDistance;
+    const smokeX = this.x + Math.cos(angle) * distance;
+    const smokeY = this.y + Math.sin(angle) * distance;
+
+    const gameScene = this.scene as any;
+    if (gameScene.createSmokePuff) {
+      gameScene.createSmokePuff(smokeX, smokeY);
+    }
+
+    this.audioManager.playAlert(); // Re-use alert sound for smoke
+  }
+
   isHiding(): boolean {
-    return this.hiding;
+    return this.hiding || this.hidingInSpot;
+  }
+
+  setHidingInSpot(hiding: boolean): void {
+    this.hidingInSpot = hiding;
+    if (hiding && !this.hiding) {
+      this.hiding = false; // Not in rock form
+    }
+  }
+
+  isGliding(): boolean {
+    return this.gliding;
+  }
+
+  isFlying(): boolean {
+    return this.flying;
   }
 
   setGrowthStage(stage: number): void {

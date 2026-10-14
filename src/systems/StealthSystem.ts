@@ -8,6 +8,8 @@ export class StealthSystem {
   private scene: Phaser.Scene;
   private player: Player;
   private npcs: (Human | Hunter)[];
+  private lastSeenPositions: Map<Human | Hunter, { x: number; y: number; time: number }> = new Map();
+  private searchMarkers: Map<Human | Hunter, Phaser.GameObjects.Graphics> = new Map();
 
   constructor(scene: Phaser.Scene, player: Player, npcs: (Human | Hunter)[]) {
     this.scene = scene;
@@ -22,15 +24,26 @@ export class StealthSystem {
   }
 
   private checkDetection(npc: Human | Hunter): void {
+    let alertState = npc.getAlertState();
+    
     if (this.player.isHiding()) {
-      // Player is hidden, gradually reset NPC alert state
-      const currentState = npc.getAlertState();
-      if (currentState === 'chasing') {
+      // Player is hidden
+      if (alertState === 'chasing' || alertState === 'alert') {
+        // Remember where we last saw them
+        if (!this.lastSeenPositions.has(npc)) {
+          this.lastSeenPositions.set(npc, { x: this.player.x, y: this.player.y, time: Date.now() });
+          this.createSearchMarker(npc, this.player.x, this.player.y);
+        }
+      }
+      
+      // Gradually reset NPC alert state
+      if (alertState === 'chasing') {
         npc.setAlertState('alert');
-      } else if (currentState === 'alert') {
+      } else if (alertState === 'alert') {
         npc.setAlertState('suspicious');
-      } else if (currentState === 'suspicious') {
+      } else if (alertState === 'suspicious') {
         npc.setAlertState('idle');
+        this.clearSearchMarker(npc);
       }
       return;
     }
@@ -49,10 +62,10 @@ export class StealthSystem {
     // Check if player is in range
     if (distance > sightRange) {
       // Out of range, gradually calm down
-      const currentState = npc.getAlertState();
-      if (currentState === 'chasing') {
+      alertState = npc.getAlertState();
+      if (alertState === 'chasing') {
         npc.setAlertState('alert');
-      } else if (currentState === 'alert' || currentState === 'suspicious') {
+      } else if (alertState === 'alert' || alertState === 'suspicious') {
         npc.setAlertState('idle');
       }
       return;
@@ -66,22 +79,23 @@ export class StealthSystem {
 
     if (Math.abs(angleDiff) > halfSightAngle) {
       // Player not in sight cone
-      const currentState = npc.getAlertState();
-      if (currentState === 'chasing') {
+      alertState = npc.getAlertState();
+      if (alertState === 'chasing') {
         npc.setAlertState('alert');
-      } else if (currentState === 'alert') {
+      } else if (alertState === 'alert') {
         npc.setAlertState('suspicious');
-      } else if (currentState === 'suspicious') {
+      } else if (alertState === 'suspicious') {
         npc.setAlertState('idle');
       }
       return;
     }
 
     // Player is in sight cone - escalate alert
-    const currentState = npc.getAlertState();
+    alertState = npc.getAlertState();
     
     // Closer = faster escalation
     const normalizedDistance = distance / sightRange;
+    const currentAlertState = alertState;
     
     if (normalizedDistance < 0.3) {
       // Very close - immediate chase
@@ -96,22 +110,48 @@ export class StealthSystem {
       }
     } else if (normalizedDistance < 0.6) {
       // Medium distance - alert
-      if (currentState === 'idle' || currentState === 'suspicious') {
+      if (currentAlertState === 'idle' || currentAlertState === 'suspicious') {
         npc.setAlertState('alert');
-      } else if (currentState === 'alert') {
+      } else if (currentAlertState === 'alert') {
         npc.setAlertState('chasing');
       }
     } else {
       // Far but visible - suspicious
-      if (currentState === 'idle') {
+      if (currentAlertState === 'idle') {
         npc.setAlertState('suspicious');
       }
     }
   }
 
+  private createSearchMarker(npc: Human | Hunter, x: number, y: number): void {
+    const marker = this.scene.add.graphics();
+    marker.lineStyle(3, 0xffeb3b, 0.6);
+    marker.strokeCircle(x, y, 30);
+    marker.strokeCircle(x, y, 40);
+    marker.setDepth(3);
+    
+    this.searchMarkers.set(npc, marker);
+  }
+
+  private clearSearchMarker(npc: Human | Hunter): void {
+    const marker = this.searchMarkers.get(npc);
+    if (marker) {
+      marker.destroy();
+      this.searchMarkers.delete(npc);
+    }
+    this.lastSeenPositions.delete(npc);
+  }
+
   reset(): void {
     this.npcs.forEach(npc => {
       npc.setAlertState('idle');
+      this.clearSearchMarker(npc);
     });
+  }
+  
+  destroy(): void {
+    this.searchMarkers.forEach(marker => marker.destroy());
+    this.searchMarkers.clear();
+    this.lastSeenPositions.clear();
   }
 }

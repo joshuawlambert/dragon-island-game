@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { GameConfig } from '../config';
 import { Player } from '../entities/Player';
 import { AudioManager } from '../utils/AudioManager';
+import { FishingMiniGame } from '../ui/FishingMiniGame';
 
 interface Collectible {
   sprite: Phaser.GameObjects.Graphics;
@@ -18,12 +19,15 @@ export class CollectibleManager {
   private audioManager: AudioManager;
   private collectibles: Collectible[] = [];
   private interactPrompt: Phaser.GameObjects.Text | null = null;
+  private fishingMiniGame: FishingMiniGame | null = null;
+  private currentFishingSpot: Collectible | null = null;
 
   constructor(scene: Phaser.Scene, player: Player, audioManager: AudioManager) {
     this.scene = scene;
     this.player = player;
     this.audioManager = audioManager;
 
+    this.fishingMiniGame = new FishingMiniGame(scene);
     this.spawnInitialCollectibles();
     this.createInteractPrompt();
   }
@@ -133,7 +137,13 @@ export class CollectibleManager {
     this.interactPrompt.setVisible(false);
   }
 
-  update(): void {
+  update(delta: number): void {
+    // Update fishing mini-game
+    if (this.fishingMiniGame && this.fishingMiniGame.isPlaying()) {
+      this.fishingMiniGame.update(delta);
+      return; // Don't process other collectibles during fishing
+    }
+
     let nearbyCollectible: Collectible | null = null;
     let minDistance = 60;
 
@@ -164,14 +174,39 @@ export class CollectibleManager {
       );
       this.interactPrompt?.setVisible(true);
 
-      // Auto-collect on proximity
-      this.collect(nearbyCollectible);
+      // Auto-collect on proximity (except fish which needs mini-game)
+      if (nearbyCollectible.type !== 'fish') {
+        this.collect(nearbyCollectible);
+      } else {
+        this.startFishing(nearbyCollectible);
+      }
     } else {
       this.interactPrompt?.setVisible(false);
     }
 
     // Update respawn timers
     this.updateRespawnTimers();
+  }
+
+  private startFishing(fishSpot: Collectible): void {
+    if (this.fishingMiniGame && !this.fishingMiniGame.isPlaying() && this.currentFishingSpot !== fishSpot) {
+      this.currentFishingSpot = fishSpot;
+      fishSpot.collected = true;
+      fishSpot.sprite.setVisible(false);
+
+      this.fishingMiniGame.start((success) => {
+        if (success) {
+          const gameScene = this.scene as any;
+          gameScene.feedPlayer(GameConfig.fish.hungerRestore);
+          this.audioManager.playSuccess();
+          if (gameScene.fishCaught !== undefined) {
+            gameScene.fishCaught++;
+          }
+        }
+        fishSpot.respawnTimer = 5000;
+        this.currentFishingSpot = null;
+      });
+    }
   }
 
   private getPromptText(type: string): string {
@@ -204,23 +239,28 @@ export class CollectibleManager {
         break;
         
       case 'fish':
-        // Simple fishing - just collect
-        if (Math.random() < GameConfig.fish.catchChance) {
-          gameScene.feedPlayer(GameConfig.fish.hungerRestore);
-          this.scene.time.delayedCall(100, () => {
-            this.audioManager.playSuccess();
-          });
-        }
-        collectible.respawnTimer = 5000;
+        // Handled by mini-game now
         break;
         
       case 'snack':
         gameScene.feedPlayer(GameConfig.snack.hungerRestore);
         collectible.respawnTimer = 60000; // 1 minute
+        if (gameScene.campSnacksEaten !== undefined) {
+          gameScene.campSnacksEaten++;
+        }
         break;
         
       case 'treasure':
         // Treasures don't respawn
+        const treasureId = `treasure_${collectible.x}_${collectible.y}`;
+        if (!gameScene.getGameState().treasures.includes(treasureId)) {
+          gameScene.getGameState().treasures.push(treasureId);
+          
+          // Auto-decorate home
+          if (gameScene.getGameState().homeDecorations.length < gameScene.getGameState().treasures.length) {
+            gameScene.getGameState().homeDecorations.push(treasureId);
+          }
+        }
         break;
     }
   }

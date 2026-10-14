@@ -9,6 +9,7 @@ export class HUD {
   private hungerBar: Phaser.GameObjects.Graphics;
   private hungerText: Phaser.GameObjects.Text;
   private stageText: Phaser.GameObjects.Text;
+  private questText: Phaser.GameObjects.Text;
 
   constructor(scene: Phaser.Scene, gameState: GameState) {
     this.container = scene.add.container(0, 0);
@@ -18,7 +19,7 @@ export class HUD {
     // Background panel
     const panel = scene.add.graphics();
     panel.fillStyle(0x000000, 0.6);
-    panel.fillRoundedRect(10, 10, 300, 140, 8);
+    panel.fillRoundedRect(10, 10, 300, 180, 8);
     this.container.add(panel);
 
     // Day counter
@@ -69,6 +70,14 @@ export class HUD {
     });
     this.container.add(this.stageText);
 
+    // Current quest
+    this.questText = scene.add.text(20, 150, '', {
+      fontSize: '12px',
+      color: '#ffeb3b',
+      wordWrap: { width: 260 }
+    });
+    this.container.add(this.questText);
+
     // Initial update
     this.updateHunger(gameState.hunger);
   }
@@ -104,6 +113,14 @@ export class HUD {
   updateGrowthStage(stageIndex: number): void {
     const stage = GrowthStages[stageIndex];
     this.stageText.setText(`🐉 ${stage.name}`);
+  }
+
+  updateQuest(questTitle: string): void {
+    if (questTitle) {
+      this.questText.setText(`📜 ${questTitle}`);
+    } else {
+      this.questText.setText('');
+    }
   }
 
   destroy(): void {
