@@ -3,7 +3,9 @@ export interface GameState {
   currentDay: number;
   hunger: number;
   treasures: string[];
+  homeDecorations: string[];
   completedQuests: string[];
+  activeQuest: string | null;
   growthStage: number;
   totalDaysPlayed: number;
   currentX: number;
@@ -24,8 +26,10 @@ export interface QuestDefinition {
   id: string;
   title: string;
   description: string;
-  checkComplete: (state: GameState) => boolean;
-  reward?: string;
+  giver: string; // Animal that gives the quest
+  checkComplete: (state: GameState, scene?: any) => boolean;
+  reward: string;
+  hungerReward?: number;
 }
 
 export interface InputState {
@@ -35,4 +39,14 @@ export interface InputState {
   right: boolean;
   hide: boolean;
   interact: boolean;
+  glide: boolean;
+  smoke: boolean;
+}
+
+export interface HidingSpot {
+  x: number;
+  y: number;
+  radius: number;
+  type: 'bush' | 'grass';
+  graphics: Phaser.GameObjects.Graphics;
 }

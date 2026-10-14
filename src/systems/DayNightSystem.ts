@@ -16,8 +16,14 @@ export class DayNightSystem {
   }
 
   update(delta: number): void {
-    // Advance time
-    const secondsPerDay = GameConfig.dayNight.dayLengthSeconds;
+    // Advance time (with optional time-skip for testing)
+    let secondsPerDay = GameConfig.dayNight.dayLengthSeconds;
+    
+    // Time-skip for testing: make days 30 seconds instead of 180
+    if (GameConfig.dayNight.timeSkipForTesting) {
+      secondsPerDay = 30;
+    }
+    
     const hoursPerSecond = 24 / secondsPerDay;
     this.timeOfDay += (hoursPerSecond * delta) / 1000;
 

@@ -17,7 +17,9 @@ export class SaveManager {
       currentDay: 1,
       hunger: GameConfig.player.maxHunger,
       treasures: [],
+      homeDecorations: [],
       completedQuests: [],
+      activeQuest: null,
       growthStage: 0,
       totalDaysPlayed: 0,
       currentX: 400,
@@ -66,7 +68,13 @@ export class SaveManager {
 
       // Ensure arrays exist
       state.treasures = Array.isArray(state.treasures) ? state.treasures : [];
+      state.homeDecorations = Array.isArray(state.homeDecorations) ? state.homeDecorations : [];
       state.completedQuests = Array.isArray(state.completedQuests) ? state.completedQuests : [];
+      
+      // Ensure new fields exist
+      if (state.activeQuest === undefined) {
+        state.activeQuest = null;
+      }
 
       // Clamp values to valid ranges
       state.hunger = Math.max(0, Math.min(GameConfig.player.maxHunger, state.hunger || 0));

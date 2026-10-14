@@ -7,6 +7,8 @@ export class InputManager {
   private wasd: { W: Phaser.Input.Keyboard.Key; A: Phaser.Input.Keyboard.Key; S: Phaser.Input.Keyboard.Key; D: Phaser.Input.Keyboard.Key } | null = null;
   private spaceKey: Phaser.Input.Keyboard.Key | null = null;
   private eKey: Phaser.Input.Keyboard.Key | null = null;
+  private shiftKey: Phaser.Input.Keyboard.Key | null = null;
+  private qKey: Phaser.Input.Keyboard.Key | null = null;
   
   // Touch controls
   private joystick: Phaser.GameObjects.Container | null = null;
@@ -42,6 +44,8 @@ export class InputManager {
     };
     this.spaceKey = this.scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
     this.eKey = this.scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.E);
+    this.shiftKey = this.scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SHIFT);
+    this.qKey = this.scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.Q);
   }
 
   setupTouchControls(_camera: Phaser.Cameras.Scene2D.Camera): void {
@@ -174,6 +178,8 @@ export class InputManager {
       right: keyboard.right || touch.right,
       hide: keyboard.hide || touch.hide,
       interact: keyboard.interact || touch.interact,
+      glide: keyboard.glide || touch.glide,
+      smoke: keyboard.smoke || touch.smoke,
     };
   }
 
@@ -185,6 +191,8 @@ export class InputManager {
       right: this.cursors?.right.isDown || this.wasd?.D.isDown || false,
       hide: Phaser.Input.Keyboard.JustDown(this.spaceKey!) || false,
       interact: Phaser.Input.Keyboard.JustDown(this.eKey!) || false,
+      glide: this.shiftKey?.isDown || false,
+      smoke: Phaser.Input.Keyboard.JustDown(this.qKey!) || false,
     };
   }
 
@@ -208,6 +216,8 @@ export class InputManager {
       right: this.joystickDX > threshold,
       hide: hideJustPressed,
       interact: interactJustPressed,
+      glide: false, // TODO: Add touch button for glide if needed
+      smoke: false, // TODO: Add touch button for smoke if needed
     };
   }
 
