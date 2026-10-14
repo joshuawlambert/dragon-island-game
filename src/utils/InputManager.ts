@@ -27,6 +27,14 @@ export class InputManager {
   private interactButtonPressed = false;
   private interactButtonPointer: number | null = null;
 
+  private glideButton: Phaser.GameObjects.Container | null = null;
+  private glideButtonHeld = false;
+  private glideButtonPointer: number | null = null;
+
+  private smokeButton: Phaser.GameObjects.Container | null = null;
+  private smokeButtonPressed = false;
+  private smokeButtonPointer: number | null = null;
+
   constructor(scene: Phaser.Scene) {
     this.scene = scene;
     this.setupKeyboard();
@@ -104,6 +112,44 @@ export class InputManager {
     this.interactButton.setSize(90, 90);
     this.interactButton.setInteractive(new Phaser.Geom.Circle(0, 0, 45), Phaser.Geom.Circle.Contains);
 
+    // Glide/Fly button (left side, bottom)
+    this.glideButton = this.scene.add.container(220, height - 120).setScrollFactor(0).setDepth(1000);
+    
+    const glideButtonBg = this.scene.add.graphics()
+      .fillStyle(0x9c27b0, 0.8)
+      .fillCircle(0, 0, 45)
+      .lineStyle(3, 0xffffff, 0.7)
+      .strokeCircle(0, 0, 45);
+    
+    const glideButtonText = this.scene.add.text(0, 0, '🦋', {
+      fontSize: '28px',
+      align: 'center'
+    }).setOrigin(0.5);
+    
+    this.glideButton.add([glideButtonBg, glideButtonText]);
+    this.glideButton.setSize(90, 90);
+    this.glideButton.setInteractive(new Phaser.Geom.Circle(0, 0, 45), Phaser.Geom.Circle.Contains);
+    this.glideButton.setVisible(false); // Hidden by default
+
+    // Smoke button (left side, above glide)
+    this.smokeButton = this.scene.add.container(220, height - 220).setScrollFactor(0).setDepth(1000);
+    
+    const smokeButtonBg = this.scene.add.graphics()
+      .fillStyle(0x607d8b, 0.8)
+      .fillCircle(0, 0, 45)
+      .lineStyle(3, 0xffffff, 0.7)
+      .strokeCircle(0, 0, 45);
+    
+    const smokeButtonText = this.scene.add.text(0, 0, '💨', {
+      fontSize: '28px',
+      align: 'center'
+    }).setOrigin(0.5);
+    
+    this.smokeButton.add([smokeButtonBg, smokeButtonText]);
+    this.smokeButton.setSize(90, 90);
+    this.smokeButton.setInteractive(new Phaser.Geom.Circle(0, 0, 45), Phaser.Geom.Circle.Contains);
+    this.smokeButton.setVisible(false); // Hidden by default
+
     this.setupTouchEvents();
   }
 
@@ -152,6 +198,16 @@ export class InputManager {
         this.interactButtonPressed = false;
         this.interactButtonPointer = null;
       }
+
+      if (pointer.id === this.glideButtonPointer) {
+        this.glideButtonHeld = false;
+        this.glideButtonPointer = null;
+      }
+
+      if (pointer.id === this.smokeButtonPointer) {
+        this.smokeButtonPressed = false;
+        this.smokeButtonPointer = null;
+      }
     });
 
     // Hide button events
@@ -164,6 +220,18 @@ export class InputManager {
     this.interactButton?.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
       this.interactButtonPressed = true;
       this.interactButtonPointer = pointer.id;
+    });
+
+    // Glide button events (hold-based)
+    this.glideButton?.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+      this.glideButtonHeld = true;
+      this.glideButtonPointer = pointer.id;
+    });
+
+    // Smoke button events
+    this.smokeButton?.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+      this.smokeButtonPressed = true;
+      this.smokeButtonPointer = pointer.id;
     });
   }
 
@@ -200,6 +268,7 @@ export class InputManager {
     const threshold = 10;
     const hideJustPressed = this.hideButtonPressed;
     const interactJustPressed = this.interactButtonPressed;
+    const smokeJustPressed = this.smokeButtonPressed;
     
     // Reset one-frame buttons
     if (this.hideButtonPressed) {
@@ -207,6 +276,9 @@ export class InputManager {
     }
     if (this.interactButtonPressed) {
       this.interactButtonPressed = false;
+    }
+    if (this.smokeButtonPressed) {
+      this.smokeButtonPressed = false;
     }
 
     return {
@@ -216,14 +288,28 @@ export class InputManager {
       right: this.joystickDX > threshold,
       hide: hideJustPressed,
       interact: interactJustPressed,
-      glide: false, // TODO: Add touch button for glide if needed
-      smoke: false, // TODO: Add touch button for smoke if needed
+      glide: this.glideButtonHeld,
+      smoke: smokeJustPressed,
     };
+  }
+
+  updateAbilityButtons(growthStage: number): void {
+    // Show glide button for Young Dragon (stage 1) and up
+    if (this.glideButton) {
+      this.glideButton.setVisible(growthStage >= 1);
+    }
+
+    // Show smoke button for Elder Dragon (stage 3) only
+    if (this.smokeButton) {
+      this.smokeButton.setVisible(growthStage >= 3);
+    }
   }
 
   destroy(): void {
     this.joystick?.destroy();
     this.hideButton?.destroy();
     this.interactButton?.destroy();
+    this.glideButton?.destroy();
+    this.smokeButton?.destroy();
   }
 }
